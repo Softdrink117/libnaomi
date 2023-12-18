@@ -6,6 +6,9 @@
 // Definition of quad Z location shared between us and font renderer.
 float __ta_quad_z_location();
 
+#define SPRITE_CMD_POLYGON_TYPE TA_CMD_POLYGON_TYPE_TRANSPARENT
+// #define SPRITE_CMD_POLYGON_TYPE TA_CMD_POLYGON_TYPE_PUNCHTHRU
+
 void sprite_draw_box(int x0, int y0, int x1, int y1, color_t color)
 {
     int left = x0 < x1 ? x0 : x1;
@@ -20,7 +23,7 @@ void sprite_draw_box(int x0, int y0, int x1, int y1, color_t color)
         { (float)right, bottom, z },
     };
 
-    ta_fill_box(TA_CMD_POLYGON_TYPE_TRANSPARENT, box, color);
+    ta_fill_box(SPRITE_CMD_POLYGON_TYPE, box, color);
 }
 
 void sprite_draw_simple(int x, int y, texture_description_t *texture)
@@ -36,7 +39,7 @@ void sprite_draw_simple(int x, int y, texture_description_t *texture)
     };
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_rotated(int x, int y, float angle, texture_description_t *texture)
@@ -60,7 +63,7 @@ void sprite_draw_rotated(int x, int y, float angle, texture_description_t *textu
     matrix_pop();
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_scaled(int x, int y, float xscale, float yscale, texture_description_t *texture)
@@ -103,7 +106,7 @@ void sprite_draw_scaled(int x, int y, float xscale, float yscale, texture_descri
     };
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_scaled_rotated(int x, int y, float xscale, float yscale, float angle, texture_description_t *texture)
@@ -154,7 +157,7 @@ void sprite_draw_scaled_rotated(int x, int y, float xscale, float yscale, float 
     matrix_pop();
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_nonsquare(int x, int y, int width, int height, texture_description_t *texture)
@@ -170,7 +173,7 @@ void sprite_draw_nonsquare(int x, int y, int width, int height, texture_descript
     };
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_nonsquare_rotated(int x, int y, int width, int height, float angle, texture_description_t *texture)
@@ -194,7 +197,7 @@ void sprite_draw_nonsquare_rotated(int x, int y, int width, int height, float an
     matrix_pop();
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_nonsquare_scaled(int x, int y, int width, int height, float xscale, float yscale, texture_description_t *texture)
@@ -237,7 +240,7 @@ void sprite_draw_nonsquare_scaled(int x, int y, int width, int height, float xsc
     };
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_nonsquare_scaled_rotated(int x, int y, int width, int height, float xscale, float yscale, float angle, texture_description_t *texture)
@@ -288,7 +291,7 @@ void sprite_draw_nonsquare_scaled_rotated(int x, int y, int width, int height, f
     matrix_pop();
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_tilemap_entry(int x, int y, int tilesize, int which, texture_description_t *texture)
@@ -314,7 +317,7 @@ void sprite_draw_tilemap_entry(int x, int y, int tilesize, int which, texture_de
     };
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_tilemap_entry_rotated(int x, int y, int tilesize, int which, float angle, texture_description_t *texture)
@@ -348,7 +351,7 @@ void sprite_draw_tilemap_entry_rotated(int x, int y, int tilesize, int which, fl
     matrix_pop();
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_tilemap_entry_scaled(int x, int y, int tilesize, int which, float xscale, float yscale, texture_description_t *texture)
@@ -397,7 +400,7 @@ void sprite_draw_tilemap_entry_scaled(int x, int y, int tilesize, int which, flo
     };
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }
 
 void sprite_draw_tilemap_entry_scaled_rotated(int x, int y, int tilesize, int which, float xscale, float yscale, float angle, texture_description_t *texture)
@@ -454,5 +457,5 @@ void sprite_draw_tilemap_entry_scaled_rotated(int x, int y, int tilesize, int wh
     matrix_pop();
 
     /* Draw the sprite to the screen. */
-    ta_draw_quad(TA_CMD_POLYGON_TYPE_TRANSPARENT, sprite, texture);
+    ta_draw_quad(SPRITE_CMD_POLYGON_TYPE, sprite, texture);
 }

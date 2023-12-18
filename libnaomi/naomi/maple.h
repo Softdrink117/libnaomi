@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-
+ 
 typedef struct player_buttons
 {
     uint8_t service;
@@ -40,6 +40,19 @@ typedef struct jvs_buttons
     player_buttons_t player2;
 } jvs_buttons_t;
 
+// #define JVS_COIN_STATUS_NORMAL          0x0
+// #define JVS_COIN_STATUS_JAM             0x1
+// #define JVS_COIN_STATUS_DISCONNECTED    0x2
+// #define JVS_COIN_STATUS_BUSY            0x3
+
+// typedef struct jvs_coins
+// {
+//     uint8_t slot1_status;
+//     uint8_t slot2_status;
+//     uint16_t slot1_count;
+//     uint16_t slot2_count;
+// }jvs_coins_t;
+
 // The following allow you to interact with the maple device
 // directly. Note that since there is only one maple device and
 // it cannot respond to multiple threads that these are all protected
@@ -58,6 +71,8 @@ int maple_request_eeprom_write(uint8_t *inbytes);
 int maple_request_jvs_reset(uint8_t addr);
 int maple_request_jvs_assign_address(uint8_t old_addr, uint8_t new_addr);
 int maple_request_jvs_id(uint8_t addr, char *outptr);
+// int maple_request_jvs_coins(uint8_t addr, jvs_coins_t *coins);
+// int maple_request_jvs_coin_decrement(uint8_t addr, uint8_t slot, uint16_t amount);
 int maple_request_jvs_buttons(uint8_t addr, jvs_buttons_t *buttons);
 
 // The following is meant to be a slightly higher-level API for polling
@@ -77,6 +92,13 @@ int maple_poll_buttons();
 jvs_buttons_t maple_buttons_pressed();
 jvs_buttons_t maple_buttons_released();
 jvs_buttons_t maple_buttons_held();
+
+// // NOT WORKING, need to investigate why
+// // The following is an API to get buttons and coin status in a single JVS call
+// int maple_request_jvs_buttons_and_coins(uint8_t addr, jvs_buttons_t *buttons, jvs_coins_t *coins);
+
+// // The following attempts to establish higher-speed JVS communications using the JVS-Dash protocol
+// int maple_request_jvs_dash();
 
 #ifdef __cplusplus
 }

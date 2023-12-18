@@ -1170,3 +1170,322 @@ unsigned int video_scratch_size()
 {
     return GLOBAL_BUFFER_SCRATCH_SIZE;
 }
+
+
+
+// ===============================================================
+
+// Experimental 240p non-interlaced output
+
+// ===============================================================
+
+// HOLY CRAP THIS ONE MIGHT ACTUALLY WORK
+
+// The key problem:
+// I didn't realize that _video_set_ta_registers() gets called every frame.
+// It was setting the FB scaler to 0x401 - an *interlaced* anti-flicker filter.
+// This is "controllable" with the global_video_15khz flag, which is really 
+// more like an "is video interlaced" flag.
+
+// This new version sets the global_video_15khz flag to FALSE, to prevent
+// interlacing features wrecking the 240p config
+
+// This configuration generates an image at seemingly the correct resolution;
+// however, TA functions do not work properly due to a scaling bug unless
+// ta.c is also modified
+
+// It seems that the issue is related to the number of tiles not dividing evenly
+// into the 240px height - 240/32 is 7.5; it appears that 7 tiles are drawn, 
+// and stretched to fill the entire screen area
+
+// Additional defines NOT included in libnaomi video_internal.h
+#define POWERVR2_WIDTH (0x0E0 >> 2)
+#define POWERVR2_HBLANK_ACTUAL (0x0D4 >> 2)
+
+// #define VIDEO240_LINEDOUBLE
+#define VIDEO240_PIXELDOUBLE
+// #define VIDEO240_PIXELCLOCKDOUBLE
+
+void _video_init_240p(int colordepth, int init_ta)
+{
+    // Adapt from 240p suite Dreamcast config 
+    // https://github.com/ArtemioUrbina/240pTestSuite/blob/master/240psuite/Dreamcast/PVR/vmodes.c
+
+    if (colordepth != VIDEO_COLOR_1555 && colordepth != VIDEO_COLOR_8888)
+    {
+        // Really no option but to exit, we don't even have video to display an error.
+        return;
+    }
+
+    uint32_t old_interrupts = irq_disable();
+    volatile unsigned int *videobase = (volatile unsigned int *)POWERVR2_BASE;
+
+    // Disable display output and framebuffer
+    videobase[POWERVR2_VIDEO_CFG] = videobase[POWERVR2_VIDEO_CFG] | (0x1 << 3);         // Disable video output
+    videobase[POWERVR2_FB_DISPLAY_CFG] = videobase[POWERVR2_FB_DISPLAY_CFG] & ~0x1;     // Framebuffer disable
+
+    global_video_width = 320;
+    global_video_height = 240;
+    global_video_depth = colordepth;
+    global_background_color = 0;
+    global_background_set = 0;
+    global_buffer_offset[0] = 0;
+    global_buffer_offset[1] = global_buffer_offset[0] + (global_video_width * global_video_height * global_video_depth);
+    global_buffer_offset[2] = global_buffer_offset[1] + (global_video_width * global_video_height * global_video_depth);
+
+    // 320 x 240 buffer is 1/4 size compared to 640x480 buffer. Ensure that the global_buffer_offset[2] location
+    // is always located at least two 640x480 locations away, to avoid chewed up texture RAM.
+    uint32_t reference_buffer_size = (640 * 480 * global_video_depth);
+    if(global_buffer_offset[2] < (reference_buffer_size * 2)) global_buffer_offset[2] = reference_buffer_size * 2;
+
+    // First, read the EEPROM and figure out if we're vertical orientation.
+    eeprom_t eeprom;
+    eeprom_read(&eeprom);
+    global_video_vertical = eeprom.system.monitor_orientation == MONITOR_ORIENTATION_VERTICAL ? 1 : 0;
+
+    // Now, read controls and figure out if we should be 15khz or 31khz.
+    jvs_buttons_t buttons;
+    maple_request_jvs_buttons(0x01, &buttons);
+    // global_video_15khz = buttons.dip1 ? 1 : 0;
+    
+    // This, in combination with per-frame ta register reset, is the core problem
+    // global_video_15khz = 1;
+    global_video_15khz = 0;
+
+    if (global_video_vertical) {
+        cached_actual_width = global_video_height;
+    } else {
+        cached_actual_width = global_video_width;
+    }
+    if (global_video_vertical) {
+        cached_actual_height = global_video_width;
+    } else {
+        cached_actual_height = global_video_height;
+    }
+
+    // Now, initialize the tile accelerator so it can be used for drawing.
+    if (init_ta)
+    {
+        _ta_init();
+    }
+
+    // Now, zero out the screen so there's no garbage if we never display.
+    void *zero_base = (void *)((VRAM_BASE + global_buffer_offset[0]) | UNCACHED_MIRROR);
+    if (!hw_memset(zero_base, 0, global_video_width * global_video_height * global_video_depth * 2))
+    {
+        // Gotta do the slow method.
+        memset(zero_base, 0, global_video_width * global_video_height * global_video_depth * 2);
+    }
+
+    // Set up video timings copied from Naomi BIOS.
+    videobase[POWERVR2_VRAM_CFG3] = 0x15D1C955;
+    videobase[POWERVR2_VRAM_CFG1] = 0x00000020;
+
+    // Make sure video is not in reset.
+    videobase[POWERVR2_RESET] = 0;
+
+    // Set border color to black.
+    videobase[POWERVR2_BORDER_COL] = 0;
+
+    // Set up display configuration.
+    // uint32_t fb_display_cfg = 0x1 << 0;  // Enable display.
+    uint32_t fb_display_cfg = 0x0;
+
+    if (global_video_depth == 2)
+    {
+        fb_display_cfg |= DISPLAY_CFG_RGB1555 << 2;  // RGB1555 mode.
+    }
+    else if (global_video_depth == 4)
+    {
+        fb_display_cfg |= DISPLAY_CFG_RGB0888 << 2;  // RGB0888 mode.
+    }
+
+    #ifdef VIDEO240_PIXELCLOCKDOUBLE
+        fb_display_cfg |= (0x1 << 23);  // Double pixel clock for 31khz.
+    #else
+        fb_display_cfg |= (0x0 << 23);  // Don't double the pixel clock for 15khz.
+    #endif
+
+    #ifdef VIDEO240_LINEDOUBLE
+        // Does this fix the blurriness issue on horizontal rasters? No, not quite
+        fb_display_cfg |= (0x1 << 1);     // Enable linedouble read mode
+    #endif
+    
+    videobase[POWERVR2_FB_DISPLAY_CFG] = fb_display_cfg;
+
+    // Set up registers that appear to be reset with TA resets every frame.
+    _video_set_ta_registers();
+
+    // Set up even/odd field video base address, shifted by bpp.
+    videobase[POWERVR2_FB_DISPLAY_ADDR_1] = global_buffer_offset[current_buffer_loc];
+    videobase[POWERVR2_FB_DISPLAY_ADDR_2] = global_buffer_offset[current_buffer_loc] + (global_video_width * global_video_depth);
+
+    // Swap buffer pointer in SW.
+    buffer_loc = next_buffer_loc;
+    buffer_base = (void *)((VRAM_BASE + global_buffer_offset[current_buffer_loc]) | UNCACHED_MIRROR);
+
+    
+	
+    if (!initialized)
+    {
+        saved_hvint = videobase[POWERVR2_VBLANK_INTERRUPT];
+        initialized = 1;
+    }
+
+    // Set up display size.
+    videobase[POWERVR2_FB_DISPLAY_SIZE] = (
+        1 << 20 |                                                       // Interlace skip modulo if we are interlaced ((width / 4) * bpp) + 1
+        (global_video_height - 1) << 10 |                               // (height - 1)
+        (((global_video_width / 4) * global_video_depth) - 1) << 0      // ((width / 4) * bpp) - 1
+    );
+
+    #ifdef VIDEO240_LINEDOUBLE
+        videobase[POWERVR2_VBLANK_INTERRUPT] = (
+            (21 << 16) |                       // Out of vblank.
+            ((260 * 2) << 0)  // In vblank.
+        );
+    #else
+        // Reference SPG_VBLANK_INT from doc for 320x240
+        videobase[POWERVR2_VBLANK_INTERRUPT] = (
+            (21 << 16) |                       // Out of vblank.
+            (260 << 0)  // In vblank.
+        );
+    #endif
+
+    // CONFIG VO
+    // VO Registers from Architecture Doc: 
+    // VO_STARTX    =   POWERVR2_HPOS
+    // VO_STARTY    =   POWERVR2_VPOS
+    // VO_CONTROL   =   POWERVR2_VIDEO_CFG
+
+    // Reference VO_STARTX from doc for 320x240
+    videobase[POWERVR2_HPOS] = 0x000000A4;
+    // Bit 0-9      =   Horizontal start position (default 0x09D)
+
+    // Reference VO_STARTY from doc for 320x240
+    // videobase[POWERVR2_VPOS] = 0x00120011;
+    videobase[POWERVR2_VPOS] = (
+        (0x12 << 16) |
+        (0x12 << 0)
+    );
+    // Bit 0-9      =   Odd-field vertical position
+    // Bit 16-25    =   Even-field vertical position
+
+    // Reference VO_CONTROL from doc for 320x240
+    // videobase[POWERVR2_VIDEO_CFG] = 0x00160100;
+
+    #ifdef VIDEO240_PIXELDOUBLE
+        videobase[POWERVR2_VIDEO_CFG] = (0x1 << 8) | (22 << 16);
+    #else
+        videobase[POWERVR2_VIDEO_CFG] = (22 << 16);
+    #endif
+    // Bit 8        =   Pixel double (for 240p, write the same pixel 2x on a line when generating a 480p raster)
+    // Bit 16-21    =   Pixel clock timing delay - needs to be 22
+
+    // Strange situation - if pixel clock timing delay is set to 0, we get beautiful crisp pixels, but 
+    // the video doesn't render properly
+
+    // CONFIG SYNC
+    // SPG (Sync Pulse Generator) Registers from Architecture Doc: 
+    // SPG_LOAD     =   POWERVR2_SYNC_LOAD
+    // SPG_HBLANK   =   POWERVR2_HBLANK_ACTUAL
+    // SPG_VBLANK   =   POWERVR2_VBORDER
+    // SPG_WIDTH    =   POWERVR2_WIDTH
+    // SPG_CONTROL  =   POWERVR2_SYNC_CFG
+
+    // Reference SPG_LOAD from doc for 320x240
+    // videobase[POWERVR2_SYNC_LOAD] = 0x01060359;
+
+    #ifdef VIDEO240_LINEDOUBLE
+        videobase[POWERVR2_SYNC_LOAD] = (
+            ((263 * 2 - 1) << 16) |
+            (0x359 << 0)
+        );
+    #else
+        videobase[POWERVR2_SYNC_LOAD] = (
+            ((263 - 1) << 16) |
+            (0x359 << 0)
+        );
+    #endif
+    
+    // Bit 0-9      =   Number of video clock cycles per line -1 (default 0x359)
+    // Bit 16-25:
+    // Progressive  =   Number of lines per field - 1
+    // Interlaced   =   (Number of lines per field/2) - 1
+
+    // Reference SPG_HBLANK from doc for 320x240
+    // videobase[POWERVR2_HBLANK_ACTUAL] = 0x007E0345;
+    videobase[POWERVR2_HBLANK_ACTUAL] = (
+        (0x7E << 16) |
+        (0x345 << 0)
+    );
+    // Bit 0-9      =   HBlank start position (default 0x345)
+    // Bit 16-25    =   HBlank end position (default 0x07E)
+
+    // Reference SPG_VBLANK from doc for 320x240
+    // videobase[POWERVR2_VBORDER] = 0x00120102;
+    videobase[POWERVR2_VBORDER] = (
+        (0x12 << 16) |
+        (0x102 << 0)
+    );
+
+    // Bit 0-9      =   Vblank start position (default 0x104)
+    // Bit 16-25    =   Vblank end position (default 0x150, recommend 0x015)
+
+    // May not be a required setting
+    // Reference SPG_WIDTH from doc for 320x240
+    // videobase[POWERVR2_WIDTH] = 0x03F1933F;
+    // Bit 0-6      =   HSYNC pulse width (in video clock cycles - 1) (default 0x3F)
+    // Bit 8-11     =   VSYNC pulse width (# lines) (default 0x3)
+    // Bit 12-21    =   Broad pulse width (in video clock cycles - 1) (default 0x319)
+    // Bit 22-31    =   Equivalent pulse width (as above) (default 0x01F)
+
+    // Reference SPG_CONTROL from doc for 320x240
+    // videobase[POWERVR2_SYNC_CFG] = 0x00000140;
+    // videobase[POWERVR2_SYNC_CFG] = (0x1 << 6) | (0x1 << 8);
+    videobase[POWERVR2_SYNC_CFG] = (0x1 << 8);
+    // Bit 0        =   HSync polarity (0 = active low, default)
+    // Bit 1        =   VSync polarity (0 = active low, default)
+    // Bit 2        =   CYsnc polarity (0 = active low, default)
+    // Bit 3        =   SPG_Lock
+    //                  Allows the SPG to synchronize with an external sync source
+    //                  If set to 1 for a single frame upon external sync input
+    // Bit 4        =   Interlace (0 = non-interlaced, default)
+    // Bit 5        =   Display in field 2 (0 = do not display in field 2, default)
+    // Bit 6        =   NTSC Signal Mode (0 = VGA mode)
+    // Bit 7        =   PAL Signal Mode (0 = VGA mode)
+    // Bit 8        =   Sync Direction (0 = external sync signal, default; 1 = internal sync, required?)
+    // Bit 9        =   Csync on H (0 = Hsync, default)
+    
+
+    // // Set up display size.
+    // videobase[POWERVR2_FB_DISPLAY_SIZE] = (
+    //     1 << 20 |                                                       // Interlace skip modulo if we are interlaced ((width / 4) * bpp) + 1
+    //     (global_video_height - 1) << 10 |                               // (height - 1)
+    //     (((global_video_width / 4) * global_video_depth) - 1) << 0      // ((width / 4) * bpp) - 1
+    // );
+
+    
+    // Reenable display output and framebuffer
+    videobase[POWERVR2_VIDEO_CFG] = videobase[POWERVR2_VIDEO_CFG] & ~(0x1 << 3);        // Enable video output
+    videobase[POWERVR2_FB_DISPLAY_CFG] = videobase[POWERVR2_FB_DISPLAY_CFG] | 0x1;      // Framebuffer enable
+    
+
+    // Wait for vblank like games do.
+    uint32_t vblank_in_position = videobase[POWERVR2_VBLANK_INTERRUPT] & 0x1FF;
+    while((videobase[POWERVR2_SYNC_STAT] & 0x1FF) != vblank_in_position) { ; }
+
+    // Now, ask the TA to set up its buffers since we have working video now.
+    if (init_ta)
+    {
+        _ta_init_buffers();
+    }
+
+    // Finally, its safe to enable interrupts and move on.
+    irq_restore(old_interrupts);
+}
+
+void video_init_240p(int colordepth)
+{
+    _video_init_240p(colordepth, 1);
+}

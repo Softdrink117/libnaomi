@@ -1072,3 +1072,343 @@ jvs_buttons_t maple_buttons_released()
 
     return buttons;
 }
+
+void _retry_outstanding_request()
+{
+    // If there was an outstanding request, process it again.
+    // This does still burn one request (the original outstanding one is wasted), 
+    // but will at least restart the process so that the original caller can retrieve
+    // results right away
+    if(__outstanding_request_addr != 0)
+    {
+        __outstanding_request = __maple_request_jvs_send_buttons_packet(__outstanding_request_addr, 1);
+    }
+}
+
+void _reset_outstanding_request()
+{
+    __outstanding_request = 0;
+    __outstanding_request_addr = 0;
+}
+
+/**
+ * Request JVS IO at addr to return current coin counts
+ * 
+ * Return 0 on success
+ *        -1 on invalid packet received or couldn't lock the hardware
+*/
+/*
+int maple_request_jvs_coins(uint8_t addr, jvs_coins_t *coins)
+{
+    if (mutex_try_lock(&maple_mutex))
+    {
+        uint8_t jvs_payload[2] = { 0x21 , 0x02};
+        _maple_request_send_jvs(addr, 2, jvs_payload);
+        jvs_status_t status = _maple_request_recv_jvs();
+        if(!status.packet_length)
+        {
+            // Didn't get a packet
+            _retry_outstanding_request();
+            mutex_unlock(&maple_mutex);
+            return -1;
+        }
+
+        if(!_jvs_packet_valid(status.packet))
+        {
+            // Packet failed CRC
+            _retry_outstanding_request();
+            mutex_unlock(&maple_mutex);
+            return -1;
+        }
+
+        if(_jvs_packet_code(status.packet) != 0x01)
+        {
+            // Packet is not response type.
+            _retry_outstanding_request();
+            mutex_unlock(&maple_mutex);
+            return -1;
+        }
+        if(_jvs_packet_payload(status.packet)[0] != 0x01)
+        {
+            // Packet is not report type.
+            _retry_outstanding_request();
+            mutex_unlock(&maple_mutex);
+            return -1;
+        }
+
+        // memcpy(outptr, _jvs_packet_payload(status.packet) + 1, _jvs_packet_payload_length_bytes(status.packet) - 1);
+        uint8_t *payload = _jvs_packet_payload(status.packet) + 1;
+        coins->slot1_status = (payload[0] & 0xC0) >> 6;
+        coins->slot1_count = ((payload[0]<< 8) | payload[1]) & 0x3FFF;
+        coins->slot2_status = (payload[2] & 0xC0) >> 6;
+        coins->slot2_count = ((payload[2]<< 8) | payload[3]) & 0x3FFF;
+
+        _retry_outstanding_request();
+        mutex_unlock(&maple_mutex);
+        return 0;
+    }
+
+    return -1;
+}
+*/
+
+/**
+ * Request JVS IO at addr to decrement coin count in specified slot by amount
+ * Note that this is NOT underflow-safe!
+ * 
+ * Return 0 on success
+ *        -1 if it couldn't lock the hardware
+*/
+/*
+int maple_request_jvs_coin_decrement(uint8_t addr, uint8_t slot, uint16_t amount)
+{
+    if (mutex_try_lock(&maple_mutex))
+    {
+        // Unset outstanding request flags if present
+        // Necessary to avoid infinite stall when polling inputs
+        // __outstanding_request = 0;
+        // __outstanding_request_addr = 0;
+
+        // Not particularly important to get a response
+        uint8_t jvs_payload[4] = { 0x30, slot, ((amount >> 8) & 0x3F), (amount & 0xFF) };
+        _maple_request_send_jvs(addr, 4, jvs_payload);
+
+        _retry_outstanding_request();
+        mutex_unlock(&maple_mutex);
+        return 0;
+    }
+
+    return -1;
+}
+*/
+
+/**
+ * Request COMMSUP information from IOs to determine supported speeds, 
+ * then attempt to raise speed if possible.
+ * 
+ * Return 0 on success,
+ *        -1 if couldn't lock the hardware
+ *        -2 if invalid response
+ *        -3 if no higher speed modes are supported
+*/
+/*
+int maple_request_jvs_dash()
+{
+    if (mutex_try_lock(&maple_mutex))
+    {
+        uint8_t jvs_payload[1] = { 0xD0 };
+        _maple_request_send_jvs(0xFF, 1, jvs_payload);
+
+        jvs_status_t status = _maple_request_recv_jvs();
+        if(!status.packet_length)
+        {
+            // Didn't get a packet
+            _retry_outstanding_request();
+            mutex_unlock(&maple_mutex);
+            return -2;
+        }
+        if(!_jvs_packet_valid(status.packet))
+        {
+            // Packet failed CRC
+            _retry_outstanding_request();
+            mutex_unlock(&maple_mutex);
+            return -2;
+        }
+        if(_jvs_packet_code(status.packet) != 0x01)
+        {
+            // Packet is not response type.
+            _retry_outstanding_request();
+            mutex_unlock(&maple_mutex);
+            return -2;
+        }
+        if(_jvs_packet_payload(status.packet)[0] != 0x01)
+        {
+            // Packet is not report type.
+            _retry_outstanding_request();
+            mutex_unlock(&maple_mutex);
+            return -2;
+        }
+
+        uint8_t *payload = _jvs_packet_payload(status.packet) + 1;
+        uint8_t speed_mask = payload[0];
+
+        // NAOMI hardware isn't fast enough to support JVS' speeds greater than 1Mbps
+        if((speed_mask & (0x1 << 1)) != 0)
+        {
+            uint8_t jvs_payload[2] = { 0xF2, (0x1 << 1) };
+            _maple_request_send_jvs(0xFF, 2, jvs_payload);
+            // This command has no response
+
+            _retry_outstanding_request();
+            mutex_unlock(&maple_mutex);
+            return 0;
+        }
+
+        _retry_outstanding_request();
+        mutex_unlock(&maple_mutex);
+        return -3;
+    }
+
+    return -1;
+}
+*/
+
+/**
+ * Request the MIE send a complex JVS command out its RS485 bus.
+ *
+ * Return 0 on success
+ *        -1 on unexpected packet received
+ */
+/*
+int _maple_request_send_complex_jvs(uint8_t addr, unsigned int len, void *bytes)
+{
+    uint8_t subcommand[16] = {
+        0x17,         // Subcommand 0x17, send simple JVS packet
+        0x77,         // GPIO direction, sent in these packets for some reason?
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        addr & 0xFF,  // JVS address to send to (0xFF is broadcast).
+        len & 0xFF,   // Amount of data in the JVS payload.
+        0x00,         // Start of data
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00
+    };
+
+    memcpy(&subcommand[8], bytes, (len > 8 ? 8 : len));
+    uint32_t *resp = _maple_swap_data(0, 0, MAPLE_NAOMI_IO_REQUEST, 5, subcommand);
+    if(_maple_response_code(resp) != MAPLE_NAOMI_IO_RESPONSE)
+    {
+        return -1;
+    }
+
+    // We could check the JVS status in this response, as we know the valid
+    // values. But, why bother?
+    return 0;
+}
+*/
+
+/**
+ * DOES NOT WORK, CAUSES CRASH
+ * Request JVS IO at addr to send raw digital switch inputs and coin counts for two players
+ * This is done with a single concatenated command of SWINP and COININP
+ * 
+ * Return 0 on success
+ *        -1 if couldn't lock the hardware
+ *        -2 if invalid packet received
+ *        -3 if packet CRC failed
+ *        -4 if packet is not a valid response
+ *        -5 if packet reports invalid state for first command (SWINP)
+ *        -6 if packet reports invalid state for second command (COININP)
+*/
+/*
+int maple_request_jvs_buttons_and_coins(uint8_t addr, jvs_buttons_t *buttons, jvs_coins_t *coins)
+{
+    if (mutex_try_lock(&maple_mutex))
+    {
+        // Unset outstanding request flags if present
+        // Necessary to avoid infinite stall when polling inputs
+        // __outstanding_request = 0;
+        // __outstanding_request_addr = 0;
+
+        // Request buttons and coins in one call
+        uint8_t jvs_payload[5] = { 0x20, 0x02, 0x02, 0x21, 0x02 };
+        // uint8_t jvs_payload[3] = { 0x20, 0x02, 0x02 };
+        _maple_request_send_complex_jvs(addr, 5, jvs_payload);
+        jvs_status_t status = _maple_request_recv_jvs();
+        if(!status.packet_length)
+        {
+            // Didn't get a packet
+            mutex_unlock(&maple_mutex);
+            return -2;
+        }
+
+        if(!_jvs_packet_valid(status.packet))
+        {
+            // Packet failed CRC
+            mutex_unlock(&maple_mutex);
+            return -3;
+        }
+
+        if(_jvs_packet_code(status.packet) != 0x01)
+        {
+            // Packet is not response type.
+            mutex_unlock(&maple_mutex);
+            return -4;
+        }
+        // First payload byte is the report code for the first command (SWINP)
+        if(_jvs_packet_payload(status.packet)[0] != 0x01)
+        {
+            // Packet reports invalid state.
+            mutex_unlock(&maple_mutex);
+            return -5;
+        }
+
+        // Maple returns the onboard DIPs and push switches automatically
+        buttons->dip1 = status.dip_switches & 0x1;
+        buttons->dip2 = (status.dip_switches >> 1) & 0x1;
+        buttons->dip3 = (status.dip_switches >> 2) & 0x1;
+        buttons->dip4 = (status.dip_switches >> 3) & 0x1;
+        buttons->psw1 = status.psw1;
+        buttons->psw2 = status.psw2;
+
+        // memcpy(outptr, _jvs_packet_payload(status.packet) + 1, _jvs_packet_payload_length_bytes(status.packet) - 1);
+        uint8_t *payload = _jvs_packet_payload(status.packet) + 1;
+
+        // First 5 bytes of the reply are expected to be the switches
+        buttons->test = (payload[0] >> 7) & 0x1;
+        // Player 1 controls
+        buttons->player1.service = (payload[1] >> 6) & 0x1;
+        buttons->player1.start = (payload[1] >> 7) & 0x1;
+        buttons->player1.up = (payload[1] >> 5) & 0x1;
+        buttons->player1.down = (payload[1] >> 4) & 0x1;
+        buttons->player1.left = (payload[1] >> 3) & 0x1;
+        buttons->player1.right = (payload[1] >> 2) & 0x1;
+        buttons->player1.button1 = (payload[1] >> 1) & 0x1;
+        buttons->player1.button2 = payload[1] & 0x1;
+        buttons->player1.button3 = (payload[2] >> 7) & 0x1;
+        buttons->player1.button4 = (payload[2] >> 6) & 0x1;
+        buttons->player1.button5 = (payload[2] >> 5) & 0x1;
+        buttons->player1.button6 = (payload[2] >> 4) & 0x1;
+        // Player 2 controls
+        buttons->player2.service = (payload[3] >> 6) & 0x1;
+        buttons->player2.start = (payload[3] >> 7) & 0x1;
+        buttons->player2.up = (payload[3] >> 5) & 0x1;
+        buttons->player2.down = (payload[3] >> 4) & 0x1;
+        buttons->player2.left = (payload[3] >> 3) & 0x1;
+        buttons->player2.right = (payload[3] >> 2) & 0x1;
+        buttons->player2.button1 = (payload[3] >> 1) & 0x1;
+        buttons->player2.button2 = payload[3] & 0x1;
+        buttons->player2.button3 = (payload[4] >> 7) & 0x1;
+        buttons->player2.button4 = (payload[4] >> 6) & 0x1;
+        buttons->player2.button5 = (payload[4] >> 5) & 0x1;
+        buttons->player2.button6 = (payload[4] >> 4) & 0x1;
+
+        // Sixth byte of the reply is the report code for the second command (COININP)
+        if(payload[5] != 0x01)
+        {
+            // Packet reports invalid coin state.
+            mutex_unlock(&maple_mutex);
+            return -6;
+        }
+
+        // Final four bytes are the coin count
+        coins->slot1_status = (payload[6] & 0xC0) >> 6;
+        coins->slot1_count = ((payload[6]<< 8) | payload[7]) & 0x3FFF;
+        coins->slot2_status = (payload[8] & 0xC0) >> 6;
+        coins->slot2_count = ((payload[8]<< 8) | payload[9]) & 0x3FFF;
+
+        _retry_outstanding_request();
+        mutex_unlock(&maple_mutex);
+        return 0;
+    }
+
+    return -1;
+}
+*/

@@ -28,6 +28,11 @@ extern "C" {
 // Pass one of the above video color defines to specify color depth.
 void video_init(int colordepth);
 
+// ===========================================================================
+// Experimental 240p progressive video init
+void video_init_240p(int colordepth);
+// ===========================================================================
+
 // Free existing video system so that it can be initialized with another
 // call.
 void video_free();
