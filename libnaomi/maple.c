@@ -1072,3 +1072,11 @@ jvs_buttons_t maple_buttons_released()
 
     return buttons;
 }
+
+// Reset any existing outstanding requests.
+// This is necessary to break out of __outstanding_request loops safely.
+void _reset_outstanding_request()
+{
+	__outstanding_request = 0;
+	__outstanding_request_addr = 0;
+}

@@ -432,7 +432,9 @@ void _ta_init_buffers()
 
     // Now, grab space for the tile descriptors themselves.
     ta_working_buffers.tile_descriptors = (void *)curbufloc;
-    curbufloc = ENSURE_ALIGNMENT(curbufloc + (4 * (6 * (((global_video_width / 32) * (global_video_height / 32)) + 1))));
+	
+	// Round up the tile numbers in case of non-integer results (EG: in a 240p video mode)
+	curbufloc = ENSURE_ALIGNMENT(curbufloc + (4 * (6 * ((((global_video_width + 31)/ 32) * ((global_video_height + 31)/ 32)) + 1))));
 
     if (curbufloc > ((UNCACHED_MIRROR | VRAM_BASE) + VRAM_SIZE))
     {
@@ -467,7 +469,9 @@ void ta_commit_begin()
     {
         // Set the target of our TA commands based on the current framebuffer position.
         // Don't do this if we've already sent it for this frame.
-        _ta_set_target(&ta_working_buffers, global_video_width / 32, global_video_height / 32);
+        
+		// Round up the tile numbers in case of non-integer results (EG: in a 240p video mode)
+		_ta_set_target(&ta_working_buffers, ((global_video_width + 31)/32), ((global_video_height + 31)/32));
     }
 
     // Need exclusive store queue access.
@@ -552,7 +556,9 @@ void _ta_begin_render(struct ta_buffers *buffers, void *scrn)
     /* Actually populate the tile descriptors themselves, pointing at the object buffers we just allocated.
      * We do this here every frame so we can exclude list types for lists that we definitely have no
      * polygons for. */
-    _ta_create_tile_descriptors(&ta_working_buffers, global_video_width / 32, global_video_height / 32);
+    
+	// Round up the tile numbers in case of non-integer results (EG: in a 240p video mode)
+	_ta_create_tile_descriptors(&ta_working_buffers, ((global_video_width + 31)/32), ((global_video_height + 31)/32));
 
     /* Convert the Z plane bits from float to int so we can cap off the bottom 4 bits. */
     union intfloat f2i;

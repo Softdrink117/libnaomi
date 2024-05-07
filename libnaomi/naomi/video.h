@@ -24,9 +24,59 @@ extern "C" {
 #define VIDEO_COLOR_8888 4
 
 // Initialize the video hardware for software and hardware drawn sprites and
-// graphics. Currently only supports 640x480@60fps VGA, no 15khz support.
+// graphics. Supports 640x480@60fps VGA by default; custom modes are configurable.
 // Pass one of the above video color defines to specify color depth.
 void video_init(int colordepth);
+
+// Structure allowing for custom-defined video modes to be constructed.
+// By default, libnaomi will use a 480p output in 31kHz mode, and a 480i output
+// in 15kHz mode. Both default modes use a 640x480 framebuffer.
+
+// By creating a custom video mode and setting it to the lowres or highres slot,
+// it is possible to output video in a different format. However, care must be taken
+// to construct video modes that are compatible with the NAOMI hardware.
+
+// Note that output resolution is influenced by both framebuffer width/height and the
+// linedouble and pixeldouble features.
+typedef struct video_mode_t{
+    unsigned int width;             // Framebuffer width.
+    unsigned int height;            // Framebuffer height.
+
+    uint16_t h_pos;                 // Horizontal position at which to start the displayed raster.
+    uint16_t v_pos;                 // Vertical position at which to start the displayed raster.
+
+    uint8_t interlaced;             // Output in interlaced mode.
+    uint8_t linedouble;             // Linedouble (write every line of framebuffer to two lines of output). Modifies output resolution.
+    uint8_t pixeldouble;            // Pixeldouble (write every pixel on a given line twice consecutively). Modifies output resolution.
+    uint8_t pixel_clock_double;     // Double the pixel clock. Necessary when constructing a 31kHz signal.
+
+    uint16_t hblank_start;          // The start (in clocks) of the horizontal blank.
+    uint16_t hblank_end;            // The end (in clocks) of the horizontal blank.
+
+    uint16_t vblank_int_start;      // The vertical position (in lines) at which the vertical blank interrupt will begin.
+    uint16_t vblank_int_end;        // The vertical position (in lines) at which the vertical blank interrupt will end.
+
+    uint16_t vblank_start;          // The vertical position (in lines) of the vertical blank.
+    uint16_t vblank_end;            // The vertical position (in lines) of the vertical blank.
+
+    uint16_t hsync;                 // The number of clocks per line. Used to construct the sync signal.
+    uint16_t vsync;                 // The number of lines. Used to construct the sync signal.
+}video_mode_t;
+
+// Optional: Set a custom video mode to use when the system is in high-res (31kHz) output mode (DIP1 OFF).
+// Must be used before video_init() is called.
+void video_set_lowres_mode(video_mode_t new_mode);
+
+// Optional: Set a custom video mode to use when the system is in low-res (15kHz) output mode (DIP1 ON).
+// Must be used before video_init() is called.
+void video_set_highres_mode(video_mode_t new_mode);
+
+// Optional: Disable or enable dithering in RGBA1555 mode.
+// Dithering is normally enabled by default in RGBA1555 , and disabled in RGBA8888 mode.
+// This function allows it to be manually disabled or forced in 1555 mode.
+// Does nothing in RGBA8888 mode.
+// Must be used before video_init() is called.
+void video_set_dither(uint8_t enabled);
 
 // Free existing video system so that it can be initialized with another
 // call.

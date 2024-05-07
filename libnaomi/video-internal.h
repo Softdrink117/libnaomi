@@ -97,9 +97,9 @@ void _ta_init_buffers();
 #define POWERVR2_COLOR_CLAMP_MIN (0x0C0 >> 2)
 #define POWERVR2_VBLANK_INTERRUPT (0x0CC >> 2)
 #define POWERVR2_SYNC_CFG (0x0D0 >> 2)
-#define POWERVR2_HBLANK (0x0D4 >> 4)
+#define POWERVR2_HBLANK (0x0D4 >> 2)
 #define POWERVR2_SYNC_LOAD (0x0D8 >> 2)
-#define POWERVR2_VBORDER (0x0DC >> 2)
+#define POWERVR2_VBLANK (0x0DC >> 2)
 #define POWERVR2_TSP_CFG (0x0E4 >> 2)
 #define POWERVR2_VIDEO_CFG (0x0E8 >> 2)
 #define POWERVR2_HPOS (0x0EC >> 2)
@@ -134,6 +134,9 @@ void _ta_init_buffers();
 #define PALETTE_CFG_RGB565 1
 #define PALETTE_CFG_ARGB4444 2
 #define PALETTE_CFG_ARGB8888 3
+
+#define SCALER_CFG_PROGRESSIVE 0x400
+#define SCALER_CFG_INTERLACED 0x401
 
 #define BLOCKSIZE_NOT_USED 0
 #define BLOCKSIZE_32 1
