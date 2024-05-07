@@ -304,7 +304,7 @@ void _video_init(int colordepth, int init_ta)
     global_video_15khz = buttons.dip1 ? 1 : 0;
 
     // Fetch the video mode based on the resolution setting
-    active_mode = (global_video_15khz ? lowres_mode : highres_mode);
+    active_mode = (global_video_15khz ? highres_mode : lowres_mode);
 
     // Determine render cfg
     if(colordepth == VIDEO_COLOR_8888)
@@ -335,6 +335,15 @@ void _video_init(int colordepth, int init_ta)
     global_buffer_offset[0] = 0;
     global_buffer_offset[1] = global_buffer_offset[0] + (global_video_width * global_video_height * global_video_depth);
     global_buffer_offset[2] = global_buffer_offset[1] + (global_video_width * global_video_height * global_video_depth);
+
+    // Since framebuffer size can change, need to make sure to preserve VRAM scratch areas.
+    // EG: 320 x 240 buffer is 1/4 size compared to 640x480 buffer. Ensure that the global_buffer_offset[2] location
+    // is always located at least two 640x480 locations away from [0], to avoid chewed up texture RAM.
+    uint32_t reference_buffer_size = (640 * 480 * global_video_depth);
+    if(global_buffer_offset[2] < global_buffer_offset[0] + (reference_buffer_size * 2))
+    {
+        global_buffer_offset[2] = global_buffer_offset[0] + reference_buffer_size * 2;
+    }
 
     // Read the EEPROM and figure out if we're vertical orientation.
     eeprom_t eeprom;
