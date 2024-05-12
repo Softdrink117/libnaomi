@@ -250,11 +250,11 @@ void _vblank_free()
 
 void video_set_lowres_mode(video_mode_t new_mode)
 {
-    highres_mode = new_mode;
+    lowres_mode = new_mode;
 }
 void video_set_highres_mode(video_mode_t new_mode)
 {
-    lowres_mode = new_mode;
+    highres_mode = new_mode;
 }
 void video_set_dither(uint8_t enabled)
 {
@@ -304,7 +304,7 @@ void _video_init(int colordepth, int init_ta)
     global_video_15khz = buttons.dip1 ? 1 : 0;
 
     // Fetch the video mode based on the resolution setting
-    active_mode = (global_video_15khz ? highres_mode : lowres_mode);
+    active_mode = (global_video_15khz ? lowres_mode : highres_mode);
 
     // Determine render cfg
     if(colordepth == VIDEO_COLOR_8888)
