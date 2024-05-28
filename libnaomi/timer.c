@@ -372,7 +372,9 @@ uint64_t _profile_get_current()
         // value.
         if(amount < profile_last)
         {
-            if ((profile_last - amount) < MAX_PROFILE_MICROSECONDS)
+            // Extremely uncommon, but it is possible for the offset to be exactly 1 second, which
+            // failed with the previous < instead of <=
+            if ((profile_last - amount) <= MAX_PROFILE_MICROSECONDS)
             {
                 // We can just adjust.
                 amount += MAX_PROFILE_MICROSECONDS;
