@@ -483,20 +483,10 @@ void _video_init(int colordepth, int init_ta)
         active_mode.hblank_start << 0      // In hblank.
     );
 
-    // Set up pixel doubling (if needed) and initialize video cfg
-    if(active_mode.pixeldouble) 
-    {
-        videobase[POWERVR2_VIDEO_CFG] = (0x1 << 8) | (0x16 << 16);
-    }
-    else 
-    {
-        videobase[POWERVR2_VIDEO_CFG] = (0x16 << 16);
-    }
-
     // Set up refresh rate / sync.
     videobase[POWERVR2_SYNC_LOAD] = (
-        active_mode.vsync << 16  |  // Vsync
-        active_mode.hsync << 0      // Hsync
+        active_mode.vsync << 16  |  // Vsync - number of lines -1
+        active_mode.hsync << 0      // Hsync - number of clocks per line
     );
 
     videobase[POWERVR2_SYNC_CFG] = (

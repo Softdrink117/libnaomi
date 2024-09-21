@@ -199,7 +199,7 @@ void _ta_create_tile_descriptors(struct ta_buffers *buffers, int tile_width, int
                             buffers->transparent_object_buffer_size
                         )
                     ) +
-                    ((tile_pos) * buffers->transparent_object_buffer_size)
+                    ((tile_pos) * buffers->punchthru_object_buffer_size)
                 );
                 *vr++ = last_address;
             }
