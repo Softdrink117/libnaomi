@@ -271,6 +271,13 @@ void _dimm_comms_free();
 void _vblank_init();
 void _vblank_free();
 
+static holly_error_handler _holly_error_handler = 0;
+
+void irq_register_holly_error_handler(holly_error_handler new_error_handler)
+{
+	_holly_error_handler = new_error_handler;
+}
+
 uint32_t _holly_interrupt(irq_state_t *cur_state)
 {
     // Interrupts we care about that we actually got this round.
@@ -284,10 +291,23 @@ uint32_t _holly_interrupt(irq_state_t *cur_state)
         // First, check for any error status.
         if (requested & HOLLY_INTERNAL_INTERRUPT_CHECK_ERROR)
         {
-            // If we were interested in ignoring certain errors, we could do so here
-            // by setting the corresponding error bit to 1 inside HOLLY_ERROR_IRQ_STATUS
-            // to clear the error and move on.
-            _irq_display_exception(SIGINT, cur_state, "holly error interrupt fired", HOLLY_ERROR_IRQ_STATUS);
+			if(_holly_error_handler)
+			{
+				// If a custom error handler has been registered, it can clear errors by setting
+				// the corresponding error bits to 1 inside HOLLY_ERROR_IRQ_STATUS.
+				HOLLY_ERROR_IRQ_STATUS = _holly_error_handler(HOLLY_ERROR_IRQ_STATUS);
+			} 
+			if(HOLLY_ERROR_IRQ_STATUS != 0)
+			{
+				// After the erorr handler (if any) has processed errors, if there are any remaining
+				// display the unhandled exception.
+				_irq_display_exception(SIGINT, cur_state, "holly error interrupt fired", HOLLY_ERROR_IRQ_STATUS);
+			}
+			else
+			{
+				// Otherwise clear the error interrupt and move on.
+				handled |= HOLLY_INTERNAL_INTERRUPT_CHECK_ERROR;
+			}
         }
 
         // Now, ignore any external interrupt set bits, since we will be checking

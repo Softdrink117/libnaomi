@@ -70,6 +70,15 @@ typedef struct
 // of detail necessary to make much use of it.
 irq_stats_t irq_stats();
 
+// Function signature required for a Holly error handling function.
+// The current error state will be input to the error handling function;
+// to clear an error, set the corresponding error bit to '1' in the returned value.
+typedef uint32_t (*holly_error_handler)(uint32_t);
+
+// Register a custom error handler for Holly errors.
+// Passing NULL to this function will deregister the current handler.
+void irq_register_holly_error_handler(holly_error_handler new_error_handler);
+
 #ifdef __cplusplus
 }
 #endif
