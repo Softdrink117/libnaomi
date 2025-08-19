@@ -40,6 +40,15 @@ static uint32_t ta_background_color = 0;
 /* Whether we are inside a list commit or not */
 static int ta_committing_list = 0;
 
+// Video parameters from video.c
+extern unsigned int global_video_depth;
+extern unsigned int global_video_width;
+extern unsigned int global_video_height;
+extern unsigned int global_video_vertical;
+extern uint16_t global_strip_buffer_cfg;
+extern unsigned int global_strip_buf_1;
+extern unsigned int global_strip_buf_2;
+
 /* Send a command, with len equal to either TA_LIST_SHORT or TA_LIST_LONG
  * for either 32 or 64 byte TA commands. */
 void ta_commit_list(void *src, int len)
@@ -143,72 +152,148 @@ void _ta_create_tile_descriptors(struct ta_buffers *buffers, int tile_width, int
 
     /* Set up individual tiles. */
     uint32_t last_address = 0;
-    for (int x = 0; x < tile_width; x++)
-    {
-        for (int y = 0; y < tile_height; y++)
-        {
-            // Calculate the actual tile position from our object lists.
-            int tile_pos = x + (y * tile_width);
 
-            // Set end of buffer, set tile position
-            int eob = (x == (tile_width - 1) && y == (tile_height - 1)) ? 0x80000000 : 0x00000000;
-            *vr++ = eob | (y << 8) | (x << 2);
+	// If using Strip Buffer, tiles *must* be laid out X-first, then Y.
+	if(global_strip_buffer_cfg)
+	{
+		for (int y = 0; y < tile_height; y++)
+		{
+			for (int x = 0; x < tile_width; x++)
+			{
+				// Calculate the actual tile position from our object lists.
+				int tile_pos = x + (y * tile_width);
 
-            // Opaque polygons.
-            if (buffers->opaque_object_buffer_size > 0 && (populated_lists & WAITING_LIST_OPAQUE) != 0)
-            {
-                last_address = olbase + ((tile_pos) * buffers->opaque_object_buffer_size);
-                *vr++ = last_address;
-            }
-            else
-            {
-                *vr++ = 0x80000000 | last_address;
-            }
+				// Set end of buffer, set tile position
+				int eob = (x == (tile_width - 1) && y == (tile_height - 1)) ? 0x80000000 : 0x00000000;
+				*vr++ = eob | (y << 8) | (x << 2);
 
-            // We don't support opaque modifiers, so nothing here.
-            *vr++ = 0x80000000 | last_address;
+				// Opaque polygons.
+				if (buffers->opaque_object_buffer_size > 0 && (populated_lists & WAITING_LIST_OPAQUE) != 0)
+				{
+					last_address = olbase + ((tile_pos) * buffers->opaque_object_buffer_size);
+					*vr++ = last_address;
+				}
+				else
+				{
+					*vr++ = 0x80000000 | last_address;
+				}
 
-            // Translucent polygons.
-            if (buffers->transparent_object_buffer_size > 0 && (populated_lists & WAITING_LIST_TRANSPARENT) != 0)
-            {
-                last_address = (
-                    olbase +
-                    (tile_width * tile_height * buffers->opaque_object_buffer_size) +
-                    ((tile_pos) * buffers->transparent_object_buffer_size)
-                );
-                *vr++ = last_address;
-            }
-            else
-            {
-                *vr++ = 0x80000000 | last_address;
-            }
+				// We don't support opaque modifiers, so nothing here.
+				*vr++ = 0x80000000 | last_address;
 
-            // We don't suppport translucent modifiers, so nothing here.
-            *vr++ = 0x80000000 | last_address;
+				// Translucent polygons.
+				if (buffers->transparent_object_buffer_size > 0 && (populated_lists & WAITING_LIST_TRANSPARENT) != 0)
+				{
+					last_address = (
+						olbase +
+						(tile_width * tile_height * buffers->opaque_object_buffer_size) +
+						((tile_pos) * buffers->transparent_object_buffer_size)
+					);
+					*vr++ = last_address;
+				}
+				else
+				{
+					*vr++ = 0x80000000 | last_address;
+				}
 
-            // Punch-through (or solid/transparent-only) polygons.
-            if (buffers->punchthru_object_buffer_size > 0 && (populated_lists & WAITING_LIST_PUNCHTHRU) != 0)
-            {
-                last_address = (
-                    olbase +
-                    (
-                        tile_width *
-                        tile_height *
-                        (
-                            buffers->opaque_object_buffer_size +
-                            buffers->transparent_object_buffer_size
-                        )
-                    ) +
-                    ((tile_pos) * buffers->punchthru_object_buffer_size)
-                );
-                *vr++ = last_address;
-            }
-            else
-            {
-                *vr++ = 0x80000000 | last_address;
-            }
-        }
-    }
+				// We don't suppport translucent modifiers, so nothing here.
+				*vr++ = 0x80000000 | last_address;
+
+				// Punch-through (or solid/transparent-only) polygons.
+				if (buffers->punchthru_object_buffer_size > 0 && (populated_lists & WAITING_LIST_PUNCHTHRU) != 0)
+				{
+					last_address = (
+						olbase +
+						(
+							tile_width *
+							tile_height *
+							(
+								buffers->opaque_object_buffer_size +
+								buffers->transparent_object_buffer_size
+							)
+						) +
+						((tile_pos) * buffers->punchthru_object_buffer_size)
+					);
+					*vr++ = last_address;
+				}
+				else
+				{
+					*vr++ = 0x80000000 | last_address;
+				}
+			}
+		}
+	}
+	// If not using Strip Buffer, ordering Y-first can be slightly more efficient on cache.
+	else
+	{
+		for (int x = 0; x < tile_width; x++)
+		{
+			for (int y = 0; y < tile_height; y++)
+			{
+				// Calculate the actual tile position from our object lists.
+				int tile_pos = x + (y * tile_width);
+
+				// Set end of buffer, set tile position
+				int eob = (x == (tile_width - 1) && y == (tile_height - 1)) ? 0x80000000 : 0x00000000;
+				*vr++ = eob | (y << 8) | (x << 2);
+
+				// Opaque polygons.
+				if (buffers->opaque_object_buffer_size > 0 && (populated_lists & WAITING_LIST_OPAQUE) != 0)
+				{
+					last_address = olbase + ((tile_pos) * buffers->opaque_object_buffer_size);
+					*vr++ = last_address;
+				}
+				else
+				{
+					*vr++ = 0x80000000 | last_address;
+				}
+
+				// We don't support opaque modifiers, so nothing here.
+				*vr++ = 0x80000000 | last_address;
+
+				// Translucent polygons.
+				if (buffers->transparent_object_buffer_size > 0 && (populated_lists & WAITING_LIST_TRANSPARENT) != 0)
+				{
+					last_address = (
+						olbase +
+						(tile_width * tile_height * buffers->opaque_object_buffer_size) +
+						((tile_pos) * buffers->transparent_object_buffer_size)
+					);
+					*vr++ = last_address;
+				}
+				else
+				{
+					*vr++ = 0x80000000 | last_address;
+				}
+
+				// We don't suppport translucent modifiers, so nothing here.
+				*vr++ = 0x80000000 | last_address;
+
+				// Punch-through (or solid/transparent-only) polygons.
+				if (buffers->punchthru_object_buffer_size > 0 && (populated_lists & WAITING_LIST_PUNCHTHRU) != 0)
+				{
+					last_address = (
+						olbase +
+						(
+							tile_width *
+							tile_height *
+							(
+								buffers->opaque_object_buffer_size +
+								buffers->transparent_object_buffer_size
+							)
+						) +
+						((tile_pos) * buffers->punchthru_object_buffer_size)
+					);
+					*vr++ = last_address;
+				}
+				else
+				{
+					*vr++ = 0x80000000 | last_address;
+				}
+			}
+		}
+	}
+    
 }
 
 /* Tell the command list compiler where to store the command list, and which tilespace to use */
@@ -321,12 +406,6 @@ uint32_t _ta_set_target(struct ta_buffers *buffers, int tile_width, int tile_hei
 }
 
 #define BACKGROUND_Z_PLANE 0.000001
-
-// Video parameters from video.c
-extern unsigned int global_video_depth;
-extern unsigned int global_video_width;
-extern unsigned int global_video_height;
-extern unsigned int global_video_vertical;
 
 void _ta_set_background_color(struct ta_buffers *buffers, uint32_t rgba)
 {
@@ -568,8 +647,19 @@ void _ta_begin_render(struct ta_buffers *buffers, void *scrn)
     /* Set up current render tiledescriptions, commandlist and framebuffer to render to. */
     videobase[POWERVR2_TILES_ADDR] = tls;
     videobase[POWERVR2_CMDLIST_ADDR] = cmdl;
-    videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_1] = scn;
-    videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = scn + global_video_width * global_video_depth;
+    
+	if(global_strip_buffer_cfg) // When using strip buffer, must use the exact pointers
+	{
+		// videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = scn + global_video_width * global_video_depth * global_strip_buffer_cfg;
+		// videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = scn;
+		videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_1] = global_strip_buf_1;
+		videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = global_strip_buf_2;
+	}
+	else
+	{
+		videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_1] = scn;
+		videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = scn + global_video_width * global_video_depth;
+	}
 
     /* Set up background plane for where there aren't triangles/quads to draw. */
     videobase[POWERVR2_BACKGROUND_INSTRUCTIONS] = (

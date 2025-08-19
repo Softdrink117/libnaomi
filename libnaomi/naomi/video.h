@@ -28,6 +28,13 @@ extern "C" {
 // Pass one of the above video color defines to specify color depth.
 void video_init(int colordepth);
 
+// Defines for strip buffer size configuration.
+#define STRIP_BUFFER_DISABLED 0
+#define STRIP_BUFFER_SIZE_32 32
+#define STRIP_BUFFER_SIZE_64 64
+#define STRIP_BUFFER_SIZE_128 128
+#define STRIP_BUFFER_SIZE_256 256
+
 // Structure allowing for custom-defined video modes to be constructed.
 // By default, libnaomi will use a 480p output in 31kHz mode, and a 480i output
 // in 15kHz mode. Both default modes use a 640x480 framebuffer.
@@ -38,9 +45,15 @@ void video_init(int colordepth);
 
 // Note that output resolution is influenced by both framebuffer width/height and the
 // linedouble and pixeldouble features.
+
+// EXPERIMENTAL: Instead of a full framebuffer, a strip-buffer can be used. This mode places
+// additional restrictions on rendering and has significant performance implications, but can
+// benefit certain types of projects.
 typedef struct video_mode_t{
     unsigned int width;             // Framebuffer width.
     unsigned int height;            // Framebuffer height.
+
+	uint16_t strip_buffer;          // Default STRIP_BUFFER_DISABLED, otherwise one of the STRIP_BUFFER_SIZE values.
 
     uint16_t h_pos;                 // Horizontal position at which to start the displayed raster.
     uint16_t v_pos;                 // Vertical position at which to start the displayed raster.
@@ -63,11 +76,11 @@ typedef struct video_mode_t{
     uint16_t vsync;                 // The number of lines. Used to construct the sync signal.
 }video_mode_t;
 
-// Optional: Set a custom video mode to use when the system is in high-res (31kHz) output mode (DIP1 OFF).
+// Optional: Set a custom video mode to use when the system is in low-res (15kHz) output mode (DIP1 ON).
 // Must be used before video_init() is called.
 void video_set_lowres_mode(video_mode_t new_mode);
 
-// Optional: Set a custom video mode to use when the system is in low-res (15kHz) output mode (DIP1 ON).
+// Optional: Set a custom video mode to use when the system is in high-res (31kHz) output mode (DIP1 OFF).
 // Must be used before video_init() is called.
 void video_set_highres_mode(video_mode_t new_mode);
 

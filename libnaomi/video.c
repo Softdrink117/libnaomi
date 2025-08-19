@@ -30,6 +30,7 @@
 static video_mode_t highres_mode = {
     .width = 640,
     .height = 480,
+	.strip_buffer = STRIP_BUFFER_DISABLED,
     .h_pos = 166,
     .v_pos = 35,
     .interlaced = 0,
@@ -49,6 +50,7 @@ static video_mode_t highres_mode = {
 static video_mode_t lowres_mode = {
     .width = 640,
     .height = 480,
+	.strip_buffer = STRIP_BUFFER_DISABLED,
     .h_pos = 164,
     .v_pos = 22,
     .interlaced = 1,
@@ -68,8 +70,8 @@ static video_mode_t lowres_mode = {
 // The current video mode in use
 static video_mode_t active_mode;
 // Dither override control and pre-calculated fb_render_cfg
-uint8_t dither_enable = 1;
-uint32_t render_cfg = (RENDER_CFG_RGB0888 << 0);
+static uint8_t dither_enable = 1;
+static uint32_t render_cfg = (RENDER_CFG_RGB0888 << 0);
 
 // Static members that don't need to be accessed anywhere else.
 static uint32_t global_background_color = 0;
@@ -99,6 +101,9 @@ unsigned int cached_actual_height = 0;
 unsigned int global_video_depth = 0;
 unsigned int global_video_vertical = 0;
 void *buffer_base = 0;
+uint16_t global_strip_buffer_cfg = 0;
+unsigned int global_strip_buf_1 = 0;
+unsigned int global_strip_buf_2 = 0;
 
 // Our current framebuffer location, for double buffering. The current_buffer_loc
 // is the one currently displayed to the screen, and the next_buffer_loc is the
@@ -112,11 +117,18 @@ void _thread_wait_vblank_swapbuffers();
 
 void _video_swap_vbuffers()
 {
-    volatile unsigned int *videobase = (volatile unsigned int *)POWERVR2_BASE;
+	// Don't need to swap frame buffers in strip buffer mode
+	if(global_strip_buffer_cfg)
+		return;
 
+	volatile unsigned int *videobase = (volatile unsigned int *)POWERVR2_BASE;
     // Swap buffers in HW.
     videobase[POWERVR2_FB_DISPLAY_ADDR_1] = global_buffer_offset[current_buffer_loc];
     videobase[POWERVR2_FB_DISPLAY_ADDR_2] = global_buffer_offset[current_buffer_loc] + (global_video_width * global_video_depth);
+
+	// // Don't need to swap frame buffers in strip buffer mode
+	// if(global_strip_buffer_cfg)
+	// 	return;
 
     // Swap buffer pointer in SW.
     buffer_loc = next_buffer_loc;
@@ -133,7 +145,10 @@ void video_display_on_vblank()
     // Handle filling the background of the other screen while we wait.
     if (global_background_set)
     {
-        global_background_fill_start = ((VRAM_BASE + global_buffer_offset[next_buffer_loc]) | UNCACHED_MIRROR);
+		if(global_strip_buffer_cfg)
+			global_background_fill_start = ((VRAM_BASE + global_buffer_offset[current_buffer_loc]) | UNCACHED_MIRROR);
+		else
+			global_background_fill_start = ((VRAM_BASE + global_buffer_offset[next_buffer_loc]) | UNCACHED_MIRROR);
         global_background_fill_end = global_background_fill_start + ((global_video_width * global_video_height * global_video_depth));
     }
     else
@@ -142,23 +157,28 @@ void video_display_on_vblank()
         global_background_fill_end = 0;
     }
 
-    // First, figure out if we're running with disabled interrupts. If so, we can't use
-    // the hardware to wait for VBLANK.
-    if (_irq_is_disabled(_irq_get_sr()))
-    {
-        // Wait for us to enter the VBLANK portion of the frame scan. This is the same
-        // spot that we would get a VBLANK interrupt if we were using threads.
-        uint32_t vblank_in_position = videobase[POWERVR2_VBLANK_INTERRUPT] & 0x1FF;
-        while((videobase[POWERVR2_SYNC_STAT] & 0x1FF) != vblank_in_position) { ; }
+	// Since strip buffers are implicitly synced to the display, don't need to wait for vblank or
+	// perform a dedicated flip
+	if(!global_strip_buffer_cfg)
+	{
+		// First, figure out if we're running with disabled interrupts. If so, we can't use
+		// the hardware to wait for VBLANK.
+		if (_irq_is_disabled(_irq_get_sr()))
+		{
+			// Wait for us to enter the VBLANK portion of the frame scan. This is the same
+			// spot that we would get a VBLANK interrupt if we were using threads.
+			uint32_t vblank_in_position = videobase[POWERVR2_VBLANK_INTERRUPT] & 0x1FF;
+			while((videobase[POWERVR2_SYNC_STAT] & 0x1FF) != vblank_in_position) { ; }
 
-        // Swap buffers in HW.
-        _video_swap_vbuffers();
-    }
-    else
-    {
-        // Wait for hardware vblank interrupt.
-        _thread_wait_vblank_swapbuffers();
-    }
+			// Swap buffers in HW.
+			_video_swap_vbuffers();
+		}
+		else
+		{
+			// Wait for hardware vblank interrupt.
+			_thread_wait_vblank_swapbuffers();
+		}
+	}
 
     // Finish filling in the background. Gotta do this now, fast or slow, because
     // when we exit this function the user is fully expected to start drawing new
@@ -329,6 +349,7 @@ void _video_init(int colordepth, int init_ta)
 
     global_video_width = active_mode.width;
     global_video_height = active_mode.height;
+	global_strip_buffer_cfg = active_mode.strip_buffer;
     global_video_depth = colordepth;
     global_background_color = 0;
     global_background_set = 0;
@@ -418,6 +439,14 @@ void _video_init(int colordepth, int init_ta)
         fb_display_cfg |= (0x1 << 1);     // Enable linedouble read mode
     }
 
+	if(active_mode.strip_buffer)
+	{
+		fb_display_cfg |= (0x1 << 22);  // Enable strip buffer
+		fb_display_cfg |= ((active_mode.strip_buffer/32) << (16 +1));  // Size of strip buffer, in lines/32. Bit 16 is a flag value, data is from 17-21.
+		// fb_display_cfg |= (0x04 << 16); // Fixed 64-px strip size, for testing
+		// fb_display_cfg |= (0x02 << 16); // Fixed 32-px strip size, for testing
+	}
+
     videobase[POWERVR2_FB_DISPLAY_CFG] = fb_display_cfg;
 
     // Set up registers that appear to be reset with TA resets.
@@ -497,22 +526,82 @@ void _video_init(int colordepth, int init_ta)
         0 << 1                                     // Negate V-sync
     );
 
+	// Update 2025/08/19
+	// Works on hardware, but only when running with interrupts disabled.
+
+	// With interrupts enabled, some kind of unhandled error occurs. But the result isn't 
+	// rendered, and it occurs very early in boot so connecting GDB in time is hard.
+
+	// Via testing, have determined:
+	// - Disabling HOLLY_ERROR_IRQ_STATUS checks does not resolve
+	// - Disabling HOLLY_INTERNAL_IRQ_STATUS checks does not resolve 
+	// - Disabling HOLLY_EXTERNAL_IRQ_STATUS checks does not resolve 
+	// - Disabling general SIGINT External error checks does not resolve 
+	// - Disabling general exception checks does not resolve 
+
+	// Using GDB (get to crash, launch server, resend game bin, then launch GDB), 
+	// seems like the issue is specifically related to irq_restore() call.
+	// This is really annoying, and difficult to debug.
+
     // Reenable display output and framebuffer
     videobase[POWERVR2_VIDEO_CFG] = videobase[POWERVR2_VIDEO_CFG] & ~(0x1 << 3);        // Enable video output
-    videobase[POWERVR2_FB_DISPLAY_CFG] = videobase[POWERVR2_FB_DISPLAY_CFG] | 0x1;      // Framebuffer enable
+	if(global_strip_buffer_cfg)
+	{
+		// If using strip buffer, don't enable regular framebuffer
+		// Even though regular framebuffer is not in use, if these registers aren't set display doesn't work
+		// global_strip_buf_1 = global_buffer_offset[current_buffer_loc];
+		// global_strip_buf_2 = global_buffer_offset[next_buffer_loc];
+		// videobase[POWERVR2_FB_DISPLAY_ADDR_1] = global_strip_buf_1;
+		// videobase[POWERVR2_FB_DISPLAY_ADDR_2] = global_strip_buf_2;
+		// videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_1] = global_strip_buf_1;
+		// videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = global_strip_buf_2;
+
+		unsigned int strip_buf_1 = global_buffer_offset[0];
+		// unsigned int strip_buf_2 = global_buffer_offset[1];
+		unsigned int strip_buf_2 = global_buffer_offset[0] + global_video_width * global_video_depth * global_strip_buffer_cfg;
+
+		void *buf1_mirror = (void *)((VRAM_BASE + strip_buf_1) | UNCACHED_MIRROR);
+		void *buf2_mirror = (void *)((VRAM_BASE + strip_buf_2) | UNCACHED_MIRROR);
+		global_strip_buf_1 = ((unsigned int)buf1_mirror) & VRAM_MASK;
+		global_strip_buf_2 = ((unsigned int)buf2_mirror) & VRAM_MASK;
+		videobase[POWERVR2_FB_DISPLAY_ADDR_1] = strip_buf_1;
+		// videobase[POWERVR2_FB_DISPLAY_ADDR_2] = strip_buf_1 + (global_video_width * global_video_depth);
+		videobase[POWERVR2_FB_DISPLAY_ADDR_2] = strip_buf_2;
+		videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_1] = global_strip_buf_1;
+		videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = global_strip_buf_2;
+
+		// videobase[POWERVR2_FB_DISPLAY_ADDR_1] = global_buffer_offset[current_buffer_loc];
+		// videobase[POWERVR2_FB_DISPLAY_ADDR_2] = global_buffer_offset[current_buffer_loc];
+
+		// // videobase[POWERVR2_FB_DISPLAY_ADDR_2] = global_buffer_offset[current_buffer_loc] + (global_video_width * global_video_depth);
+		// videobase[POWERVR2_FB_DISPLAY_ADDR_2] = global_buffer_offset[current_buffer_loc] + global_video_width * global_video_depth * global_strip_buffer_cfg;
+
+		// unsigned int scn = ((unsigned int)buffer_base) & VRAM_MASK;
+		// videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_1] = scn;
+		// videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = scn;
+
+		// videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = scn + global_video_width * global_video_depth * global_strip_buffer_cfg;
+		// videobase[POWERVR2_FB_DISPLAY_ADDR_1] = scn;
+		// videobase[POWERVR2_FB_DISPLAY_ADDR_2] = scn;
+
+		// videobase[POWERVR2_FB_DISPLAY_CFG] = videobase[POWERVR2_FB_DISPLAY_CFG] | 0x1;      // Framebuffer enable
+	}
+	
+	videobase[POWERVR2_FB_DISPLAY_CFG] = videobase[POWERVR2_FB_DISPLAY_CFG] | 0x1;      // Framebuffer enable
 
     // Wait for vblank like games do.
     uint32_t vblank_in_position = videobase[POWERVR2_VBLANK_INTERRUPT] & 0x1FF;
     while((videobase[POWERVR2_SYNC_STAT] & 0x1FF) != vblank_in_position) { ; }
 
-    // Now, ask the TA to set up its buffers since we have working video now.
+    // Now, ask the TA to set up its buffers since we have working video.
     if (init_ta)
     {
         _ta_init_buffers();
     }
 
     // Finally, its safe to enable interrupts and move on.
-    irq_restore(old_interrupts);
+	(void)old_interrupts;
+    irq_restore(old_interrupts); // TESTING NOTES: disabling interrupts allows Strip Buffer mode to run
 }
 
 void video_init(int colordepth)
