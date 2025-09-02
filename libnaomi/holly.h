@@ -39,4 +39,12 @@
 #define HOLLY_ERROR_IRQ_4_MASK *((volatile uint32_t *)0xA05F6928)
 #define HOLLY_ERROR_IRQ_6_MASK *((volatile uint32_t *)0xA05F6938)
 
+// Error interrupts from HOLLY itself.
+
+#define HOLLY_ERROR_INTERRUPT_TILE_CACHE_EXCEED (0x1 << 0)
+#define HOLLY_ERROR_INTERRUPT_STRIP_BUFFER_LATE (0x1 << 1)
+// Currently unknown, observed in strip buffer video_init
+#define HOLLY_ERROR_INTERRUPT_UNKNOWN_A (0x1 << 30)
+#define HOLLY_ERROR_INTERRUPT_UNKNOWN_B (0x1 << 31)
+
 #endif

@@ -648,10 +648,8 @@ void _ta_begin_render(struct ta_buffers *buffers, void *scrn)
     videobase[POWERVR2_TILES_ADDR] = tls;
     videobase[POWERVR2_CMDLIST_ADDR] = cmdl;
     
-	if(global_strip_buffer_cfg) // When using strip buffer, must use the exact pointers
+	if(global_strip_buffer_cfg) // When using strip buffer, use the exact pointers
 	{
-		// videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = scn + global_video_width * global_video_depth * global_strip_buffer_cfg;
-		// videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = scn;
 		videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_1] = global_strip_buf_1;
 		videobase[POWERVR2_TA_FRAMEBUFFER_ADDR_2] = global_strip_buf_2;
 	}

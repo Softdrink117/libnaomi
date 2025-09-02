@@ -296,7 +296,8 @@ uint32_t _holly_interrupt(irq_state_t *cur_state)
 				// If a custom error handler has been registered, it can clear errors by setting
 				// the corresponding error bits to 1 inside HOLLY_ERROR_IRQ_STATUS.
 				HOLLY_ERROR_IRQ_STATUS = _holly_error_handler(HOLLY_ERROR_IRQ_STATUS);
-			} 
+			}
+
 			if(HOLLY_ERROR_IRQ_STATUS != 0)
 			{
 				// After the erorr handler (if any) has processed errors, if there are any remaining
