@@ -43,8 +43,5 @@
 
 #define HOLLY_ERROR_INTERRUPT_TILE_CACHE_EXCEED (0x1 << 0)
 #define HOLLY_ERROR_INTERRUPT_STRIP_BUFFER_LATE (0x1 << 1)
-// Currently unknown, observed in strip buffer video_init
-#define HOLLY_ERROR_INTERRUPT_UNKNOWN_A (0x1 << 30)
-#define HOLLY_ERROR_INTERRUPT_UNKNOWN_B (0x1 << 31)
 
 #endif

@@ -271,8 +271,25 @@ void _dimm_comms_free();
 void _vblank_init();
 void _vblank_free();
 
-static holly_error_handler _holly_error_handler = 0;
+// If no custom error handler has beenn registered, ignore some common
+// non-fatal HOLLY error interrupts.
+// Note that while it is safe to ignore these errors, *significant*
+// rendering artifacts may occur when they are raised
+static uint32_t _default_holly_error_handler(uint32_t err_state)
+{
+	uint32_t handled = 0;
+	// Too many objects for one tile to fit in cache
+	if(err_state & HOLLY_ERROR_INTERRUPT_TILE_CACHE_EXCEED)
+		handled |= HOLLY_ERROR_INTERRUPT_TILE_CACHE_EXCEED;
+	// Strip buffer not finished rendering before swap deadline
+	if(err_state & HOLLY_ERROR_INTERRUPT_STRIP_BUFFER_LATE)
+		handled |= HOLLY_ERROR_INTERRUPT_STRIP_BUFFER_LATE;
+	return handled;
+}
 
+static holly_error_handler _holly_error_handler = (holly_error_handler)&_default_holly_error_handler;
+
+// If NULL is passed, no error handler will be set and SIGINT will be thrown on any HOLLY error exception
 void irq_register_holly_error_handler(holly_error_handler new_error_handler)
 {
 	_holly_error_handler = new_error_handler;
